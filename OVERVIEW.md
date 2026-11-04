@@ -1,7 +1,11 @@
-Shows the remaining quota of every account in your local Magpie gateway inside Paseo's usage view, next to the built-in Codex, Claude and other usage sources.
+Displays real-time quotas for local Magpie gateway accounts in Paseo's Usage views and as a composer pill directly inside the agent input toolbar.
 
-The plugin reads `http://127.0.0.1:3425/v1/magpie/quotas` on the daemon host. Each Magpie account (Codex, Kiro, Antigravity, WorkBuddy, Qoder, OpenRouter and so on) becomes one usage report with its windows (7 days, 5 hours, per-pool limits), credit balances, plan name and reset times. Accounts that Magpie reports as expired or blocked show Magpie's error text. Informational rows such as AI Studio's proxy and admin page links are skipped.
+Features:
+1. **Composer Pill**: A persistent pill on the agent composer track bar displaying the active session model's quota percentage (e.g. `Gemini 14%`, `Codex 96%`) and cooling status. Clicking the pill opens a detailed quota popover.
+2. **Native Usage Source**: Integrates directly into Settings → Usage and sidebar usage views alongside built-in providers.
+3. **Session Awareness**: Automatically matches and highlights the active agent's provider with a `Current session` indicator.
+4. **Detailed Windows**: Displays 7-day cycles, 5-hour limits, credit balances, and reset countdowns.
+5. **Interactive Controls**: Toggle between used vs. remaining percentages, and mask sensitive email addresses.
 
-For an agent that routes through Magpie, the agent's usage shows only the matching provider's accounts. This is recognised from a `magpie/<provider>/<model>` model id (Pi, OpenCode) or from a `*_BASE_URL` environment variable pointing at the Magpie gateway.
-
-Setup: Magpie must be running on the same machine as the Paseo daemon. Set `MAGPIE_BASE_URL` in the daemon environment if the gateway listens elsewhere. Results are cached for 10 seconds; nothing is sent anywhere except the local gateway.
+Requirements:
+Magpie must be running on the same machine as the Paseo daemon (`http://127.0.0.1:3425` by default, or set via `MAGPIE_BASE_URL`).

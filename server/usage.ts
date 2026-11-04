@@ -1,4 +1,3 @@
-import { z } from "zod";
 import {
   hashAccountKey,
   toneFromUsedPct,
@@ -11,76 +10,12 @@ import {
   type UsageWindow,
 } from "@getpaseo/plugin/server/usage";
 import type { UsageInput } from "../shared/input.js";
+import { fetchMagpieEntries } from "./quotas.js";
+import type { MagpieEntry, MagpieWindow } from "../shared/quotas.js";
 
 const MAGPIE_BASE = (process.env.MAGPIE_BASE_URL || "http://127.0.0.1:3425").replace(/\/+$/u, "");
-const CACHE_TTL_MS = 10_000;
 
-const num = z.number().nullish();
-const str = z.string().nullish();
-
-const WindowSchema = z
-  .object({
-    name: z.string(),
-    used: num,
-    remaining: num,
-    resetsAt: str,
-    runsOutAt: str,
-    display: str,
-    amount: num,
-    limit: num,
-    unit: str,
-    pool: str,
-    text: z.boolean().nullish(),
-  })
-  .passthrough();
-
-const EntrySchema = z
-  .object({
-    provider: z.string(),
-    name: z.string().nullish(),
-    kind: str,
-    plan: str,
-    user: str,
-    windows: z.array(WindowSchema).nullish(),
-    error: str,
-    balance: str,
-    readAt: str,
-  })
-  .passthrough();
-
-type Entry = z.infer<typeof EntrySchema>;
-type MagpieWindow = z.infer<typeof WindowSchema>;
-
-const ResponseSchema = z.object({ data: z.array(z.unknown()) });
-
-let cache: { at: number; entries: Entry[] } | null = null;
-let inflight: Promise<Entry[]> | null = null;
-
-/** All Magpie accounts. Cached for 10 s; concurrent callers share one request. */
-async function loadEntries(): Promise<Entry[]> {
-  if (cache && Date.now() - cache.at < CACHE_TTL_MS) return cache.entries;
-  if (inflight) return inflight;
-  inflight = (async () => {
-    try {
-      const res = await fetch(`${MAGPIE_BASE}/v1/magpie/quotas`, {
-        signal: AbortSignal.timeout(5_000),
-        headers: { Accept: "application/json" },
-      });
-      if (!res.ok) throw new Error(`Magpie quota API returned ${res.status}`);
-      const { data } = ResponseSchema.parse(await res.json());
-      // Skip malformed rows instead of failing the whole list.
-      const entries = data.flatMap((row) => {
-        const parsed = EntrySchema.safeParse(row);
-        return parsed.success ? [parsed.data] : [];
-      });
-      cache = { at: Date.now(), entries };
-      return entries;
-    } finally {
-      inflight = null;
-    }
-  })();
-  return inflight;
-}
+type Entry = MagpieEntry;
 
 function userOf(entry: Entry): string {
   return entry.user ?? "";
@@ -109,7 +44,7 @@ function toAccount(entry: Entry): UsageAccount {
 export async function discover(scope: UsageScope): Promise<UsageAccount[]> {
   let entries: Entry[];
   try {
-    entries = await loadEntries();
+    entries = await fetchMagpieEntries();
   } catch {
     return [];
   }
@@ -136,7 +71,7 @@ function sessionProvider(
 export async function fetchUsage(input: UsageInput): Promise<UsageReport> {
   let entries: Entry[];
   try {
-    entries = await loadEntries();
+    entries = await fetchMagpieEntries();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return { status: "error", error: `Cannot reach Magpie at ${MAGPIE_BASE}: ${message}` };

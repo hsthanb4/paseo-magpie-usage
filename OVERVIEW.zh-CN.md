@@ -1,7 +1,13 @@
-在 Paseo 的用量（usage）视图中显示本机 Magpie 网关里每个账号的剩余额度，与内置的 Codex、Claude 等用量来源并列。
+在 Paseo 的用量（Usage）视图以及 Agent 输入框底部状态栏（Composer Pill 胶囊）中显示本机 Magpie 网关里每个账号的实时配额。
 
-插件在 daemon 所在主机上读取 `http://127.0.0.1:3425/v1/magpie/quotas`。每个 Magpie 账号（Codex、Kiro、Antigravity、WorkBuddy、Qoder、OpenRouter 等）对应一条用量报告，包括各个窗口（7 天、5 小时、分池限额）、积分余额、套餐名和重置时间。Magpie 报告为过期或被封禁的账号会显示 Magpie 给出的错误信息。AI Studio 的代理出口、管理页这类说明性条目会被过滤掉。
+支持双模展现：
+1. **输入框常驻胶囊（Composer Pill）**：在输入框操作栏直观显示当前会话模型的实时已用/剩余百分比（如 `Gemini 14%`、`Codex 96%` 等），并在熔断冷却时给出提示。点击胶囊即可向上平滑弹出配额详情卡片。
+2. **原生用量数据源（Usage Source）**：在 Paseo 的 Settings → Usage 及侧边栏 Usage 中与内置的 Codex、Claude 并列展现全景视图。
 
-对于经由 Magpie 路由的会话，会话内的用量只显示对应 Provider 的账号。识别方式：模型 ID 为 `magpie/<provider>/<model>`（Pi、OpenCode），或会话环境里某个 `*_BASE_URL` 指向 Magpie 网关。
+详情悬浮卡片特性：
+- **会话感知置顶**：自动识别当前 Agent 运行的模型并置顶对应 Provider，高亮 `● 当前会话`。
+- **窗口进度概览**：清晰呈现 7 天总额度、5 小时限制窗口、积分余额以及重置倒计时。
+- **便捷交互控制**：支持一键切换「已用」与「剩余」视角，支持账号邮箱一键脱敏。
+- **自动杂质过滤**：剔除网关的代理/管理页等非配额配置链接。
 
-前提：Magpie 需在 Paseo daemon 同一台机器上运行。网关不在默认地址时，在 daemon 环境中设置 `MAGPIE_BASE_URL`。结果缓存 10 秒，除本机网关外不向任何地方发送数据。
+前提：Magpie 需在 Paseo daemon 同一台机器上运行（默认 `http://127.0.0.1:3425`，可通过 `MAGPIE_BASE_URL` 自定义）。数据本地内存缓存 10 秒，除本机网关外不向任何外部服务发送数据。
