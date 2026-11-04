@@ -1,0 +1,26 @@
+{
+  "name": "paseo-magpie-usage",
+  "private": true,
+  "version": "0.1.0",
+  "files": [
+    "paseo-plugin.json",
+    "OVERVIEW.md",
+    "OVERVIEW.*.md",
+    "icon.svg",
+    "icon.png",
+    "index.server.ts",
+    "server/",
+    "shared/"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@getpaseo/plugin": "0.15.0",
+    "@types/node": "^20.19.43",
+    "typescript": "^5.9.3",
+    "zod": "^4.4.3"
+  },
+  "type": "module",
+  "description": "Paseo plugin: show local Magpie gateway account quotas in Paseo usage"
+}

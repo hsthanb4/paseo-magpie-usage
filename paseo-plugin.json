@@ -1,0 +1,9 @@
+{
+  "id": "magpie-usage-source",
+  "name": "Magpie usage",
+  "icon": "icon.png",
+  "media": [],
+  "requirements": {
+    "paseo": ">=0.15.0"
+  }
+}
