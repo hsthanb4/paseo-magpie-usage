@@ -3,6 +3,7 @@ import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
 import type { PluginButtonContentProps } from "@getpaseo/plugin/client";
 import { useRpc, useAgent } from "@getpaseo/plugin/client";
 import { getQuotasRpc, type MagpieEntry, type MagpieWindow } from "../shared/quotas.js";
+import { getCachedMagpieEntries } from "./pill.js";
 
 function maskEmail(email: string | null | undefined, enabled: boolean): string {
   if (!email) return "";
@@ -45,10 +46,15 @@ export function MagpiePopover(props: PluginButtonContentProps) {
   const { theme, close } = props;
   const agentId = props.context === "agent" ? props.agentId : "";
   const getQuotas = useRpc(getQuotasRpc);
-  const [entries, setEntries] = useState<MagpieEntry[]>([]);
-  const [loading, setLoading] = useState(false);
+
+  // 关键优化 1：初始状态直接使用内存快照 (0ms 秒开，无白屏/加载跳动)
+  const [entries, setEntries] = useState<MagpieEntry[]>(() => getCachedMagpieEntries().entries);
+  const [loading, setLoading] = useState<boolean>(() => getCachedMagpieEntries().entries.length === 0);
   const [error, setError] = useState<string | null>(null);
-  const [updatedAt, setUpdatedAt] = useState<string>("");
+  const [updatedAt, setUpdatedAt] = useState<string>(() => {
+    const t = getCachedMagpieEntries().updatedAt;
+    return t > 0 ? new Date(t).toISOString() : "";
+  });
   const [maskEnabled, setMaskEnabled] = useState(true);
   const [viewMode, setViewMode] = useState<"used" | "remaining">("used");
 
@@ -63,7 +69,10 @@ export function MagpiePopover(props: PluginButtonContentProps) {
 
   const loadData = useCallback(
     async (force = false) => {
-      setLoading(true);
+      // 如果已有缓存且非强制刷新，不展示阻塞 loading
+      if (force || entries.length === 0) {
+        setLoading(true);
+      }
       setError(null);
       try {
         const res = await getQuotas({ force });
@@ -79,14 +88,17 @@ export function MagpiePopover(props: PluginButtonContentProps) {
         setLoading(false);
       }
     },
-    [getQuotas],
+    [getQuotas, entries.length],
   );
 
   useEffect(() => {
-    void loadData(false);
-  }, [loadData]);
+    // 如果缓存已超过 10 秒，打开弹层时静默对齐一次
+    const age = Date.now() - getCachedMagpieEntries().updatedAt;
+    if (age > 10_000 || entries.length === 0) {
+      void loadData(false);
+    }
+  }, [loadData, entries.length]);
 
-  // 判断是否属于当前 Agent 的会话 Provider
   const isAgentProviderMatch = useCallback(
     (entry: MagpieEntry) => {
       const p = String(entry.provider || "").toLowerCase();
@@ -98,7 +110,6 @@ export function MagpiePopover(props: PluginButtonContentProps) {
       if (am.includes(p) || p.includes(am)) return true;
       if (am.includes(n) || n.includes(am)) return true;
 
-      // 常见模型映射
       if (p.includes("antigravity") || p.includes("gemini")) {
         if (am.includes("gemini") || ap.includes("gemini")) return true;
       }
@@ -119,7 +130,6 @@ export function MagpiePopover(props: PluginButtonContentProps) {
     [agentInfo],
   );
 
-  // 排序：当前会话对应的账号排在最上面
   const sortedEntries = useMemo(() => {
     const list = [...entries];
     list.sort((a, b) => {
@@ -305,7 +315,6 @@ export function MagpiePopover(props: PluginButtonContentProps) {
 
   return (
     <View style={styles.container}>
-      {/* 头部工具栏 */}
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>Magpie 配额状态</Text>
@@ -338,14 +347,12 @@ export function MagpiePopover(props: PluginButtonContentProps) {
         </View>
       </View>
 
-      {/* 错误提示 */}
       {error ? (
         <View style={styles.errorBanner}>
           <Text style={styles.errorText}>{error}</Text>
         </View>
       ) : null}
 
-      {/* 卡片列表 */}
       <ScrollView style={{ maxHeight: 380 }} contentContainerStyle={styles.scrollContent}>
         {sortedEntries.length === 0 && !loading ? (
           <Text style={{ textAlign: "center", color: theme.colors.foregroundMuted, padding: 20 }}>
@@ -445,7 +452,6 @@ export function MagpiePopover(props: PluginButtonContentProps) {
         })}
       </ScrollView>
 
-      {/* 底部 */}
       <View style={styles.footer}>
         <Text style={styles.footerText}>网关: 127.0.0.1:3425</Text>
         <Pressable accessibilityRole="button" onPress={close} style={styles.closeButton}>

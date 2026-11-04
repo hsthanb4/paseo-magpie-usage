@@ -50,8 +50,21 @@ export async function discover(scope: UsageScope): Promise<UsageAccount[]> {
   }
   if (scope.kind === "global") return entries.map(toAccount);
 
-  const provider = sessionProvider(scope, new Set(entries.map((e) => e.provider)));
-  if (!provider) return [];
+  const known = new Set(entries.map((e) => e.provider));
+  const provider = sessionProvider(scope, known);
+  if (!provider) {
+    // 兜底保护：如果会话经由 Magpie 网关（模型含 magpie 或 BASE_URL 指向本机网关），
+    // 即使路由组名字未能精准收敛到单一 provider，也返回所有正常账号，绝不在上下文浮层显示空白
+    const isViaMagpie =
+      (scope.model ?? "").toLowerCase().includes("magpie") ||
+      Object.entries(scope.env).some(
+        ([k, v]) => /BASE_URL$/u.test(k) && typeof v === "string" && v.startsWith(MAGPIE_BASE),
+      );
+    if (isViaMagpie) {
+      return entries.filter((e) => !e.error && (e.windows?.length ?? 0) > 0).map(toAccount);
+    }
+    return [];
+  }
   return entries.filter((e) => e.provider === provider).map(toAccount);
 }
 
@@ -59,11 +72,60 @@ function sessionProvider(
   scope: Extract<UsageScope, { kind: "session" }>,
   known: Set<string>,
 ): string | null {
-  const parts = (scope.model ?? "").split("/").filter(Boolean);
-  if (parts[0] === "magpie" && parts[1] && known.has(parts[1])) return parts[1];
-  const viaMagpie = Object.entries(scope.env).some(
-    ([k, v]) => /BASE_URL$/u.test(k) && v.startsWith(MAGPIE_BASE),
-  );
+  const modelStr = scope.model ?? "";
+  const parts = modelStr.split("/").filter(Boolean);
+
+  // 1. 精确匹配标准路径: magpie/<provider>/...
+  if (parts[0] === "magpie" && parts[1] && known.has(parts[1])) {
+    return parts[1];
+  }
+
+  // 2. 判断是否经由 Magpie 网关
+  const viaMagpie =
+    parts[0] === "magpie" ||
+    Object.entries(scope.env).some(
+      ([k, v]) => /BASE_URL$/u.test(k) && typeof v === "string" && v.startsWith(MAGPIE_BASE),
+    );
+
+  if (viaMagpie) {
+    // 2.1 检查模型路径中的任意段是否直接命中已知 provider
+    for (const p of parts) {
+      if (known.has(p)) return p;
+    }
+
+    // 2.2 路由组与模型别名智能推断 (如 magpie/auto/gemini-3.8-flash -> antigravity)
+    const lower = modelStr.toLowerCase();
+    if (lower.includes("gemini") || lower.includes("antigravity")) {
+      if (known.has("antigravity")) return "antigravity";
+      if (known.has("ai-studio")) return "ai-studio";
+    }
+    if (
+      lower.includes("claude") ||
+      lower.includes("sonnet") ||
+      lower.includes("opus") ||
+      lower.includes("haiku") ||
+      lower.includes("kiro")
+    ) {
+      if (known.has("kiro")) return "kiro";
+      if (known.has("claude")) return "claude";
+    }
+    if (lower.includes("gpt") || lower.includes("codex") || lower.includes("o1") || lower.includes("o3")) {
+      if (known.has("codex")) return "codex";
+    }
+    if (lower.includes("workbuddy") || lower.includes("hy4free")) {
+      if (known.has("workbuddy-ai")) return "workbuddy-ai";
+    }
+    if (lower.includes("glm") || lower.includes("zcode")) {
+      if (known.has("zcode")) return "zcode";
+    }
+    if (lower.includes("qoder")) {
+      if (known.has("qoder")) return "qoder";
+    }
+    if (lower.includes("command")) {
+      if (known.has("command")) return "command";
+    }
+  }
+
   if (viaMagpie && parts[0] && known.has(parts[0])) return parts[0];
   return null;
 }
