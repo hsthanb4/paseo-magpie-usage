@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { PaseoApi } from "@getpaseo/client";
+import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import type { ModelOwners } from "../shared/match.js";
 
 /**
@@ -28,7 +28,7 @@ async function signature(owners: ModelOwners): Promise<string> {
   return createHash("sha1").update(`${mtime}\n${ids}`).digest("hex");
 }
 
-export async function syncPaseoModelCatalog(paseo: PaseoApi, owners: ModelOwners): Promise<void> {
+export async function syncPaseoModelCatalog(paseo: PluginHandlerContext["paseo"], owners: ModelOwners): Promise<void> {
   if (running || Object.keys(owners).length === 0) return;
   if (Date.now() - lastAttemptAt < MIN_GAP_MS) return;
   const sig = await signature(owners);
