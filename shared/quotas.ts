@@ -28,6 +28,8 @@ export const MagpieEntrySchema = z
     error: z.string().nullish(),
     balance: z.string().nullish(),
     readAt: z.string().nullish(),
+    last: z.boolean().nullish(),
+    lastServedAt: z.string().nullish(),
   })
   .passthrough();
 
@@ -43,6 +45,7 @@ export const getQuotasRpc = defineRpc({
     ok: z.boolean(),
     error: z.string().optional(),
     entries: z.array(MagpieEntrySchema),
+    modelOwners: z.record(z.string(), z.string()),
     updatedAt: z.string(),
   }),
 });

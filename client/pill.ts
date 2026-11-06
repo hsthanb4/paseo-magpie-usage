@@ -3,6 +3,7 @@ import type {
   PluginClientContext,
 } from "@getpaseo/plugin/client";
 import { MagpiePopover } from "./popover.js";
+import { knownProviders, pickEntry, resolveProvider, type ModelOwners } from "../shared/match.js";
 import { getQuotasRpc, type MagpieEntry, type MagpieWindow } from "../shared/quotas.js";
 
 interface AgentSummary {
@@ -13,6 +14,7 @@ interface AgentSummary {
 }
 
 let cachedEntries: MagpieEntry[] = [];
+let cachedModelOwners: ModelOwners = {};
 let lastFetchedAt = 0;
 
 function isQuotaWindow(w: MagpieWindow): boolean {
@@ -24,46 +26,8 @@ function isQuotaWindow(w: MagpieWindow): boolean {
 }
 
 function matchEntryForAgent(agent: AgentSummary, entries: MagpieEntry[]): MagpieEntry | null {
-  if (entries.length === 0) return null;
-  const ap = String(agent.provider || "").toLowerCase();
-  const am = String(agent.model || "").toLowerCase();
-
-  // 1. 精确 Provider 匹配
-  for (const e of entries) {
-    const p = String(e.provider || "").toLowerCase();
-    const n = String(e.name || "").toLowerCase();
-    if (ap === p || ap === n) return e;
-    if (am.includes(p) || (n && am.includes(n))) return e;
-  }
-
-  // 2. 路由组与别名映射
-  if (am.includes("gemini") || ap.includes("gemini") || am.includes("antigravity")) {
-    const ag = entries.find((e) => e.provider === "antigravity" || e.provider === "ai-studio");
-    if (ag) return ag;
-  }
-  if (am.includes("gpt") || am.includes("codex") || ap.includes("codex")) {
-    const cx = entries.find((e) => e.provider === "codex");
-    if (cx) return cx;
-  }
-  if (am.includes("claude") || am.includes("kiro") || ap.includes("kiro")) {
-    const kr = entries.find((e) => e.provider === "kiro" || e.provider === "claude");
-    if (kr) return kr;
-  }
-  if (am.includes("workbuddy") || ap.includes("workbuddy") || am.includes("hy4free")) {
-    const wb = entries.find((e) => e.provider === "workbuddy-ai" || e.provider === "workbuddy");
-    if (wb) return wb;
-  }
-  if (am.includes("glm") || am.includes("zcode") || ap.includes("zcode")) {
-    const zc = entries.find((e) => e.provider === "zcode");
-    if (zc) return zc;
-  }
-  if (am.includes("qoder") || ap.includes("qoder")) {
-    const qd = entries.find((e) => e.provider === "qoder");
-    if (qd) return qd;
-  }
-
-  // 3. 兜底返回第一个正常账号
-  return entries.find((e) => (e.windows?.length ?? 0) > 0) ?? entries[0] ?? null;
+  const provider = resolveProvider(agent, knownProviders(entries), cachedModelOwners);
+  return pickEntry(provider, entries);
 }
 
 function derivePillPresentation(agent: AgentSummary, entries: MagpieEntry[]) {
@@ -71,7 +35,7 @@ function derivePillPresentation(agent: AgentSummary, entries: MagpieEntry[]) {
   if (!entry) {
     return {
       label: "Magpie",
-      title: "Magpie 额度监控 - 点击查看",
+      title: "Magpie 额度监控 - 点击查看（当前模型无法对应到具体账号）",
     };
   }
 
@@ -291,6 +255,7 @@ export function startPillManager(client: PluginClientContext): () => void {
       const res = await client.rpc(getQuotasRpc, { force: false });
       if (res.ok && Array.isArray(res.entries)) {
         cachedEntries = res.entries;
+        cachedModelOwners = res.modelOwners;
         lastFetchedAt = Date.now();
         updateAllPills();
       }
@@ -320,6 +285,10 @@ export function startPillManager(client: PluginClientContext): () => void {
   };
 }
 
-export function getCachedMagpieEntries(): { entries: MagpieEntry[]; updatedAt: number } {
-  return { entries: cachedEntries, updatedAt: lastFetchedAt };
+export function getCachedMagpieEntries(): {
+  entries: MagpieEntry[];
+  modelOwners: ModelOwners;
+  updatedAt: number;
+} {
+  return { entries: cachedEntries, modelOwners: cachedModelOwners, updatedAt: lastFetchedAt };
 }

@@ -1,10 +1,36 @@
 import { z } from "zod";
 import { MagpieEntrySchema, type MagpieEntry } from "../shared/quotas.js";
+import type { ModelOwners } from "../shared/match.js";
 
 const MAGPIE_BASE = (process.env.MAGPIE_BASE_URL || "http://127.0.0.1:3425").replace(/\/+$/u, "");
 const CACHE_TTL_MS = 10_000;
 
 const ResponseSchema = z.object({ data: z.array(z.unknown()) });
+const ModelsSchema = z.object({
+  data: z.array(z.object({ id: z.string(), owned_by: z.string().nullish() }).passthrough()),
+});
+const MODELS_TTL_MS = 5 * 60_000;
+let modelsCache: { at: number; owners: ModelOwners } | null = null;
+
+/** model id → owning provider, from Magpie's /v1/models. Failures keep the last good map. */
+export async function fetchModelOwners(): Promise<ModelOwners> {
+  if (modelsCache && Date.now() - modelsCache.at < MODELS_TTL_MS) return modelsCache.owners;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5_000);
+  try {
+    const res = await fetch(`${MAGPIE_BASE}/v1/models`, { signal: controller.signal });
+    if (!res.ok) throw new Error(`Magpie models API returned ${res.status}`);
+    const { data } = ModelsSchema.parse(await res.json());
+    const owners: ModelOwners = {};
+    for (const m of data) if (m.owned_by) owners[m.id] = m.owned_by;
+    modelsCache = { at: Date.now(), owners };
+    return owners;
+  } catch {
+    return modelsCache?.owners ?? {};
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 let cache: { at: number; entries: MagpieEntry[] } | null = null;
 let inflight: Promise<MagpieEntry[]> | null = null;
@@ -45,13 +71,15 @@ export async function getMagpieEntries(force = false): Promise<{
   ok: boolean;
   error?: string;
   entries: MagpieEntry[];
+  modelOwners: ModelOwners;
   updatedAt: string;
 }> {
   try {
-    const entries = await fetchMagpieEntries(force);
+    const [entries, modelOwners] = await Promise.all([fetchMagpieEntries(force), fetchModelOwners()]);
     return {
       ok: true,
       entries,
+      modelOwners,
       updatedAt: new Date().toISOString(),
     };
   } catch (err) {
@@ -60,6 +88,7 @@ export async function getMagpieEntries(force = false): Promise<{
       ok: false,
       error: `Cannot reach Magpie (${MAGPIE_BASE}): ${message}`,
       entries: cache?.entries ?? [],
+      modelOwners: modelsCache?.owners ?? {},
       updatedAt: cache ? new Date(cache.at).toISOString() : new Date().toISOString(),
     };
   }

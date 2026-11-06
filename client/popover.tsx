@@ -3,6 +3,7 @@ import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
 import type { PluginButtonContentProps } from "@getpaseo/plugin/client";
 import { useRpc, useAgent } from "@getpaseo/plugin/client";
 import { getQuotasRpc, type MagpieEntry, type MagpieWindow } from "../shared/quotas.js";
+import { knownProviders, pickEntry, resolveProvider, type ModelOwners } from "../shared/match.js";
 import { getCachedMagpieEntries } from "./pill.js";
 
 function maskEmail(email: string | null | undefined, enabled: boolean): string {
@@ -55,6 +56,7 @@ export function MagpiePopover(props: PluginButtonContentProps) {
     const t = getCachedMagpieEntries().updatedAt;
     return t > 0 ? new Date(t).toISOString() : "";
   });
+  const [modelOwners, setModelOwners] = useState<ModelOwners>(() => getCachedMagpieEntries().modelOwners);
   const [maskEnabled, setMaskEnabled] = useState(true);
   const [viewMode, setViewMode] = useState<"used" | "remaining">("used");
 
@@ -78,6 +80,7 @@ export function MagpiePopover(props: PluginButtonContentProps) {
         const res = await getQuotas({ force });
         if (res.ok) {
           setEntries(res.entries);
+          setModelOwners(res.modelOwners);
           setUpdatedAt(res.updatedAt);
         } else {
           setError(res.error || "获取配额失败");
@@ -99,36 +102,17 @@ export function MagpiePopover(props: PluginButtonContentProps) {
     }
   }, [loadData, entries.length]);
 
-  const isAgentProviderMatch = useCallback(
-    (entry: MagpieEntry) => {
-      const p = String(entry.provider || "").toLowerCase();
-      const n = String(entry.name || "").toLowerCase();
-      const ap = String(agentInfo?.provider || "").toLowerCase();
-      const am = String(agentInfo?.model || "").toLowerCase();
-
-      if (ap.includes(p) || p.includes(ap)) return true;
-      if (am.includes(p) || p.includes(am)) return true;
-      if (am.includes(n) || n.includes(am)) return true;
-
-      if (p.includes("antigravity") || p.includes("gemini")) {
-        if (am.includes("gemini") || ap.includes("gemini")) return true;
-      }
-      if (p.includes("codex") || p.includes("openai")) {
-        if (am.includes("codex") || am.includes("gpt") || ap.includes("codex")) return true;
-      }
-      if (p.includes("kiro") || p.includes("claude")) {
-        if (am.includes("claude") || am.includes("kiro")) return true;
-      }
-      if (p.includes("workbuddy")) {
-        if (am.includes("workbuddy") || ap.includes("workbuddy")) return true;
-      }
-      if (p.includes("zcode") || p.includes("glm")) {
-        if (am.includes("glm") || am.includes("zcode")) return true;
-      }
-      return false;
-    },
-    [agentInfo],
-  );
+  // Exactly one account is "the current session": the provider the model resolves to, and within
+  // it the account Magpie is serving from. Family-name guessing marked Kiro and Claude together.
+  const servingEntry = useMemo(() => {
+    const provider = resolveProvider(
+      { provider: agentInfo?.provider, model: agentInfo?.model },
+      knownProviders(entries),
+      modelOwners,
+    );
+    return pickEntry(provider, entries);
+  }, [agentInfo, entries, modelOwners]);
+  const isAgentProviderMatch = useCallback((entry: MagpieEntry) => entry === servingEntry, [servingEntry]);
 
   const sortedEntries = useMemo(() => {
     const list = [...entries];
